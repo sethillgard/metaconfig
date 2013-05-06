@@ -33,3 +33,11 @@ nosetests.xml
 .mr.developer.cfg
 .project
 .pydevproject
+
+# Local meta configs
+localmetaconfig.yaml
+
+# Temp
+dan/
+bash/
+vim/
