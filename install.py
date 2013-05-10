@@ -94,95 +94,149 @@ def main(argv):
 
     module = yaml.load(stream)
 
-    if "basepath" in module:
-      module["basepath"] = expandPath(module["basepath"])
+    # If the location for the module is "?", we should ask each time.
+    if "location" in module and module["location"] is "?":
+      print("Please provide the base path for this module.")
+      location = promptPath(None)
+      if location is not None:
+        module["location"] = location
 
     # Install symlinks
-    if "symlinks" in module:
-      for symlink in module["symlinks"]:
-        result = installSymlink(symlink, module, module_meta_path)
+    if "links" in module:
+      for link in module["links"]:
+        result = installSymlink(link, module, module_meta_path)
 
   print("\n--- Done ---")
   return 0
 
 def installSymlink(symlink, module, module_meta_path):
+  basepath = "?"
+  if "location" in module:
+    basepath = module["location"]
 
-  # If the symlink itself contains a path, use it
-  path, filename = os.path.split(expandPath(symlink))
-  # Correct in case the symlink is a folder and ends in /
-  if path is not "" and filename is "" and os.path.isdir(path):
-    path, filename = os.path.split(expandPath(symlink)[:-1])
+  if isinstance(symlink, str):
+    filename = symlink
+    enabled = True
+  else:
+    filename = symlink["file"]
+
+    if "enabled" in symlink and symlink["enabled"] is False:
+      return
+
+    if "location" in symlink:
+      basepath = symlink["location"]
 
   if filename is "":
     print("Error: Found empty filename for symlink.")
     return "error"
 
+  # Cleanup
+  filename = expandPath(filename)
+  basepath = expandPath(basepath)
+
+  # Take out the last "/" if it's the last character so that split works
+  # correctly.
+  if filename[-1:] is "/":
+    filename = filename[:-1]
+
+  # We do this because the filename may add to the basepath, or override it.
+  # For example, if basepath is "~/", filename may be "somedir/somefile", in
+  # which case the full path should be "~/somedir/somefile". But filename may
+  # also be "/logs/somelog", in which case the "/" means it's an absolute path,
+  # and we should ignore the basepath.
+  middle, filename = os.path.split(filename)
+
+  target = os.path.join(module_meta_path, middle, filename)
+  # Target may be explicitly defined. The type check is to avoid hits when the
+  # string contains "target" as a substring.
+  if not isinstance(symlink, str) and "target" in symlink:
+    target = expandPath(os.path.join(module_meta_path, symlink["target"]))
+
   print("Installing symlink: " + filename)
 
-  # The path where we want the symlink to go (in the metaconfig folder).
-  link_target = os.path.join(module_meta_path, filename)
-
-  # Make sure we have a file of the same name in the metaconfig folder.
-  if not os.path.lexists(link_target):
-    print("Error: No matching element for " + filename + " at " + link_target)
-    print("This would create a broken symlink. Skipping this element.")
-    return "error"
-
-  # Use the location tag of the module if [symlink] is just the filename.
-  if path is "":
-    if "location" in module:
-      path = expandPath(os.path.join(module["location"], filename))
-    else:
-      print("No path specified for " + filename)
-      path = promptPath(filename, is_dir)
-
-  # Fix this mess
-  if not os.path.isdir(path):
-    print ("Inexistent path: " + path)
-    path = promptPath()
-
-
-  # If path is still None, we should just skip this element, because the user
-  # told us to.
-  if path is None or path is "":
-    print("Skipping: " + filename)
+  # Figure out where should we install thsi symlink
+  path = getFullPath(basepath, middle, filename)
+  if path is None:
+    print (" - Skipping " + filename)
     return "ok"
 
-  # At this point, path is guaranteed to exist because promptPath makes sure
-  # it does.
-  path = expandPath(path)
-  norm_path = os.path.normpath(path)
+  # Make sure we have a file of the same name in the metaconfig folder.
+  if not os.path.lexists(target):
+    print(" - Error: No matching element for " + filename + " at " + target)
+    print(" - This would create a broken symlink. Skipping this element.")
+    return "error"
+
 
   # If the file is already a symlink to where we want it, do nothing.
   # This possibly means this tool ran before.
   if os.path.islink(path):
-    if os.path.samefile(os.path.realpath(path), link_target):
-      print("Symlink already present. Skipping.")
+    if os.path.samefile(os.path.realpath(path), target):
+      print(" - Symlink already present. Skipping.")
       return "ok"
 
   # Get the backup info
-  bak_path = getNextBak(norm_path)
-  print("Creating backup: " + bak_path)
+  bak_path = getNextBak(path)
+  print(" - Creating backup: " + bak_path)
+
+  return
 
   # Here we go. Rename the file to the backup and replace it with a symlink.
   try:
     os.rename(norm_path, bak_path)
     os.symlink(link_target, norm_path)
   except IOError:
-    print("Error creating symlink from: " + norm_path + " to path: " +
+    print(" - Error creating symlink from: " + norm_path + " to path: " +
       link_target)
+    print(" - Do we have the correct permissions?")
 
-def promptPath(name):
+def getFullPath(basepath, middle, filename):
+  if basepath is "?":
+    # "?" Means always ask the user.
+    path = promptPath(filename)
+  elif middle is "":
+    if basepath is "":
+      # We have no information, just prompt.
+      path = promptPath(filename);
+    else:
+      # We have a basepath and no middle.
+      path = os.path.join(basepath, filename)
+  else:
+    if middle[0] in ["~", "/", "."]:
+      # Middle suggests its an absolute or relative part, ignore basepath.
+      path = os.path.join(middle, filename)
+    else:
+      # We actually have 3 parts.
+      path = os.path.join(basepath, middle, filename)
+
+  # Skip this element?
+  if path is "" or path is None:
+    return None
+
+  # Whoa, lot's of ifs. At this point we have a path. Let's make sure it exists,
+  # otherwise, prompt. We actually don't need it to exist, we just need the
+  # base dir to exist.
+  parent_dir, _ = os.path.split(path)
+  if not os.path.isdir(parent_dir):
+    print(" - Inexistent path: " + parent_dir)
+    path = promptPath(filename)
+
+  return path
+
+def promptPath(filename):
   readline.set_completer_delims(' \t\n;')
   readline.parse_and_bind("tab: complete")
   readline.set_completer(promptPathCompleter)
 
   path = None
   while True:
-    print("Provide a path for " + name)
-    print("You can press tab to autocomplete.")
-    print("Leave empty to skip.")
-    path = input("Where should I put " + name + "? ")
+    if filename is not None:
+      print(" - Provide a path for " + filename)
+    print(" - You can press tab to autocomplete.")
+    print(" - Leave empty to skip.")
+    if filename is None:
+      path = input(" >>> ")
+    else:
+      path = input(" - " + filename + "? ")
 
     # If we get an empty string back, just return, indicating to skip this file.
     if path.strip() is "":
@@ -195,7 +249,7 @@ def promptPath(name):
       return path
 
     # The full path fails, but the base path is correct, so we are being given
-    # the path to a new file. Which is fine.
+    # the path to a new file, which is fine.
     base, _ = os.path.split(path)
     if os.path.lexists(base) and os.path.isdir(base):
       return path
