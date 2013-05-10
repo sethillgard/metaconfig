@@ -56,11 +56,10 @@ def main(argv):
 
     Don't worry about running this multiple times. If a symlink to the right
     location is detected, no action will be taken for that file or directory.
-
-    This script will also generate a log file with the full list of changes
-    performed, and there is a script called uninstall.py that can be used to
-    revert any changes made.
     """)
+
+  modules_to_run = ["vim"]
+  ignored_modules = []
 
   should_continue = promptYesNo("Do you wish to continue?")
   if not should_continue:
@@ -77,13 +76,15 @@ def main(argv):
     if module_meta_path is meta_dir:
       continue
 
-    # Ignore hidden folders. This includes .git
-    if module_name[0] is ".":
-      continue
+    # Ignore modules not listed as parameters, ignored ones, and hidden ones
+    if module_name not in modules_to_run: continue
+    if module_name in ignored_modules: continue
+    if module_name[0] is ".": continue
 
-    print("\n--- Installing module: " + module_name)
+    print("\n--- Module: " + module_name + " ---")
 
     if "localmetaconfig.yaml" in file_names:
+      print("Using localmetaconfig.yaml")
       stream = open(module_meta_path + "/localmetaconfig.yaml", 'r')
     elif "metaconfig.yaml" in file_names:
       stream = open(module_meta_path + "/metaconfig.yaml", 'r')
@@ -92,133 +93,114 @@ def main(argv):
       continue
 
     module = yaml.load(stream)
-    for element in module:
-      result = installElement(element, module_meta_path)
-      if result is "parse_error":
-        print ("Error: Could not parse yaml file for module: " + module_name)
 
+    if "basepath" in module:
+      module["basepath"] = expandPath(module["basepath"])
+
+    # Install symlinks
+    if "symlinks" in module:
+      for symlink in module["symlinks"]:
+        result = installSymlink(symlink, module, module_meta_path)
 
   print("\n--- Done ---")
   return 0
 
-def installElement(element, module_meta_path):
-  if "dir" in element:
-    name = element["dir"]
-    is_dir = True
-  elif "file" in element:
-    name = element["file"]
-    is_dir = False
-  else:
-    return "parse_error"
+def installSymlink(symlink, module, module_meta_path):
 
-  print("Installing element: " + name)
+  # If the symlink itself contains a path, use it
+  path, filename = os.path.split(expandPath(symlink))
+  # Correct in case the symlink is a folder and ends in /
+  if path is not "" and filename is "" and os.path.isdir(path):
+    path, filename = os.path.split(expandPath(symlink)[:-1])
 
-  # The path where we want the symlink to go
-  meta_path = module_meta_path + "/" + name
-  suggested_location = None
-  path = None
+  if filename is "":
+    print("Error: Found empty filename for symlink.")
+    return "error"
 
-  if not os.path.lexists(meta_path):
-    print("Error: No matching element at " + meta_path)
+  print("Installing symlink: " + filename)
+
+  # The path where we want the symlink to go (in the metaconfig folder).
+  link_target = os.path.join(module_meta_path, filename)
+
+  # Make sure we have a file of the same name in the metaconfig folder.
+  if not os.path.lexists(link_target):
+    print("Error: No matching element for " + filename + " at " + link_target)
     print("This would create a broken symlink. Skipping this element.")
     return "error"
 
-  if "location" in element:
-    suggested_location = os.path.normpath(element["location"])
-    suggested_location = expandPath(suggested_location + "/" + name)
-    if os.path.lexists(suggested_location):
-      path = suggested_location
+  # Use the location tag of the module if [symlink] is just the filename.
+  if path is "":
+    if "location" in module:
+      path = expandPath(os.path.join(module["location"], filename))
     else:
-      print ("File not in the suggested location: " + suggested_location)
+      print("No path specified for " + filename)
+      path = promptPath(filename, is_dir)
 
-  # In case the file is not on the suggested location, or if no location was
-  # suggested, ask the user for the path.
-  if path is None:
-    path = promptPath(name, is_dir)
+  # Fix this mess
+  if not os.path.isdir(path):
+    print ("Inexistent path: " + path)
+    path = promptPath()
 
-    # If path is still None, we should just skip this element, because the user
-    # told us to.
-    if path is None:
-      print("Skipping: " + name)
-      return "ok"
+
+  # If path is still None, we should just skip this element, because the user
+  # told us to.
+  if path is None or path is "":
+    print("Skipping: " + filename)
+    return "ok"
 
   # At this point, path is guaranteed to exist because promptPath makes sure
   # it does.
-  path = expandPath(os.path.normpath(path))
+  path = expandPath(path)
+  norm_path = os.path.normpath(path)
 
   # If the file is already a symlink to where we want it, do nothing.
   # This possibly means this tool ran before.
   if os.path.islink(path):
-    if os.path.samefile(os.path.realpath(path), meta_path):
+    if os.path.samefile(os.path.realpath(path), link_target):
       print("Symlink already present. Skipping.")
       return "ok"
 
-  # Check the type of the element
-  if is_dir and not os.path.isdir(path):
-    print("Error: " + path + " is a file, not a directory.")
-    return "error"
-  if not is_dir and os.path.isdir(path):
-    print("Error: " + path + " is a directory, not a file.")
-    return "error"
-
   # Get the backup info
-  bak_path = getNextBak(path)
+  bak_path = getNextBak(norm_path)
   print("Creating backup: " + bak_path)
 
   # Here we go. Rename the file to the backup and replace it with a symlink.
   try:
-    os.rename(path, bak_path)
-    os.symlink(meta_path, path)
+    os.rename(norm_path, bak_path)
+    os.symlink(link_target, norm_path)
   except IOError:
-    print("Error creating symlink from: " + path + " to path: " + meta_path)
+    print("Error creating symlink from: " + norm_path + " to path: " +
+      link_target)
 
-def promptPath(name, is_dir):
+def promptPath(name):
   readline.set_completer_delims(' \t\n;')
   readline.parse_and_bind("tab: complete")
-  readline.set_completer(complete)
+  readline.set_completer(promptPathCompleter)
 
   path = None
   while True:
+    print("Provide a path for " + name)
     print("You can press tab to autocomplete.")
-    if is_dir:
-      print("Leave empty to skip this directory.")
-    else:
-      print("Leave empty to skip this file.")
-
-    path = input("Where is " + name + "? ")
+    print("Leave empty to skip.")
+    path = input("Where should I put " + name + "? ")
 
     # If we get an empty string back, just return, indicating to skip this file.
     if path.strip() is "":
       return None
 
-    # If we are prompting for a directory...
-    if is_dir and os.path.isdir(path):
-      if name is os.path.basename(os.path.normpath(path)):
-        return path
-      else:
-        use = promptYesNo("The directory provided has a different name. " +
-          "Use anyways?")
-        if use:
-          return path
+    path = expandPath(path)
 
-    # If we are prompting for a file...
-    elif not is_dir and os.path.lexists(path):
-      if name is os.path.basename(path):
-        return path
-      else:
-        use = promptYesNo("The file provided has a different name. " +
-          "Use anyways?")
-        if use:
-          return path
+    # We get something that exists
+    if os.path.lexists(path):
+      return path
 
-    # Input error. Invalid path.
-    else:
-      print("The provided path is invalid. Please try again.")
-      if is_dir:
-        print("A valid path to a directory is needed.")
-      else:
-        print("A valid path to a file is needed.")
-      print("")
+    # The full path fails, but the base path is correct, so we are being given
+    # the path to a new file. Which is fine.
+    base, _ = os.path.split(path)
+    if os.path.lexists(base) and os.path.isdir(base):
+      return path
+
+    print("Invalid path. Please try again.")
 
   raise ValueError("We should never make it here.")
   return None
@@ -271,7 +253,7 @@ def getNextBak(path):
 def usage():
   print("""Usage text""")
 
-def complete(text, state):
+def promptPathCompleter(text, state):
   text = expandPath(text)
   return (glob.glob(text + '*')+[None])[state]
 
