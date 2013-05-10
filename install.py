@@ -32,6 +32,14 @@ import os.path
 import readline
 import glob
 
+class bc:
+    HEADER = '\033[95m'
+    OKBLUE = '\033[94m'
+    OKGREEN = '\033[92m'
+    WARNING = '\033[93m'
+    ERROR = '\033[91m'
+    END = '\033[0m'
+
 def main(argv):
   print("""
     --- META CONFIG ---""")
@@ -89,7 +97,6 @@ def main(argv):
     elif "metaconfig.yaml" in file_names:
       stream = open(module_meta_path + "/metaconfig.yaml", 'r')
     else:
-      print("No meta file for module. Skipping.")
       continue
 
     module = yaml.load(stream)
@@ -127,7 +134,9 @@ def installSymlink(symlink, module, module_meta_path):
       basepath = symlink["location"]
 
   if filename is "":
+    print(bc.ERROR, end='')
     print("Error: Found empty filename for symlink.")
+    print(bc.END, end='')
     return "error"
 
   # Cleanup
@@ -144,6 +153,9 @@ def installSymlink(symlink, module, module_meta_path):
   # which case the full path should be "~/somedir/somefile". But filename may
   # also be "/logs/somelog", in which case the "/" means it's an absolute path,
   # and we should ignore the basepath.
+  # Save the old filename because it's useful to tell the user which file
+  # in particular we are talking about.
+  old_filename = filename
   middle, filename = os.path.split(filename)
 
   target = os.path.join(module_meta_path, middle, filename)
@@ -152,20 +164,21 @@ def installSymlink(symlink, module, module_meta_path):
   if not isinstance(symlink, str) and "target" in symlink:
     target = expandPath(os.path.join(module_meta_path, symlink["target"]))
 
-  print("Installing symlink: " + filename)
+  print("Installing symlink: " + old_filename)
+
+  # Make sure we have a file of the same name in the metaconfig folder.
+  if not os.path.lexists(target):
+    print(bc.ERROR, end='')
+    print(" - Error: No matching element for " + filename + " at " + target)
+    print(" - This would create a broken symlink. Skipping this element.")
+    print(bc.END, end='')
+    return "error"
 
   # Figure out where should we install thsi symlink
   path = getFullPath(basepath, middle, filename)
   if path is None:
     print (" - Skipping " + filename)
     return "ok"
-
-  # Make sure we have a file of the same name in the metaconfig folder.
-  if not os.path.lexists(target):
-    print(" - Error: No matching element for " + filename + " at " + target)
-    print(" - This would create a broken symlink. Skipping this element.")
-    return "error"
-
 
   # If the file is already a symlink to where we want it, do nothing.
   # This possibly means this tool ran before.
@@ -182,12 +195,13 @@ def installSymlink(symlink, module, module_meta_path):
 
   # Here we go. Rename the file to the backup and replace it with a symlink.
   try:
-    os.rename(norm_path, bak_path)
-    os.symlink(link_target, norm_path)
+    os.rename(path, bak_path)
+    os.symlink(target, path)
   except IOError:
-    print(" - Error creating symlink from: " + norm_path + " to path: " +
-      link_target)
+    print(bc.ERROR, end='')
+    print(" - Error creating symlink from: " + path + " to path: " + target)
     print(" - Do we have the correct permissions?")
+    print(bc.END, end='')
 
 def getFullPath(basepath, middle, filename):
   if basepath is "?":
@@ -212,7 +226,7 @@ def getFullPath(basepath, middle, filename):
   if path is "" or path is None:
     return None
 
-  # Whoa, lot's of ifs. At this point we have a path. Let's make sure it exists,
+  # Whoa, lots of ifs. At this point we have a path. Let's make sure it exists,
   # otherwise, prompt. We actually don't need it to exist, we just need the
   # base dir to exist.
   parent_dir, _ = os.path.split(path)
