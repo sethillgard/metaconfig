@@ -66,13 +66,17 @@ def main(argv):
     location is detected, no action will be taken for that file or directory.
     """)
 
-  modules_to_run = ["vim"]
+  interactive = False
+  if len(argv) is 0:
+    interactive = True
+
+  modules_to_run = argv
   ignored_modules = []
 
-  should_continue = promptYesNo("Do you wish to continue?")
-  if not should_continue:
-    print("Goodbye.")
-    return 0
+  # should_continue = promptYesNo("Do you wish to continue?")
+  # if not should_continue:
+  #   print("Goodbye.")
+  #   return 0
 
   for (module_meta_path, dir_name, file_names) in os.walk(meta_dir):
     module_meta_path = expandPath(module_meta_path)
@@ -85,21 +89,35 @@ def main(argv):
       continue
 
     # Ignore modules not listed as parameters, ignored ones, and hidden ones
-    if module_name not in modules_to_run: continue
+    if not interactive and module_name not in modules_to_run: continue
     if module_name in ignored_modules: continue
     if module_name[0] is ".": continue
 
-    print("\n--- Module: " + module_name + " ---")
-
     if "localmetaconfig.yaml" in file_names:
-      print("Using localmetaconfig.yaml")
       stream = open(module_meta_path + "/localmetaconfig.yaml", 'r')
     elif "metaconfig.yaml" in file_names:
       stream = open(module_meta_path + "/metaconfig.yaml", 'r')
     else:
       continue
 
+    print("\n--- Module: " + module_name + " ---")
+    if "localmetaconfig.yaml" in file_names:
+      print("Using localmetaconfig.yaml")
+
     module = yaml.load(stream)
+
+    # If we are in interactive mode, print a list of links to be installed and
+    # ask the user if the module should be installed.
+    if interactive:
+      print("This module includes the following files: ")
+      if "links" in module:
+        for link in module["links"]:
+          if isinstance(link, str):
+            print(" - " + link)
+          else:
+            print(" - " + link["file"])
+      if not promptYesNo("Install this module?"):
+        continue
 
     # If the location for the module is "?", we should ask each time.
     if "location" in module and module["location"] is "?":
@@ -191,12 +209,12 @@ def installSymlink(symlink, module, module_meta_path):
   bak_path = getNextBak(path)
   print(" - Creating backup: " + bak_path)
 
-  return
 
   # Here we go. Rename the file to the backup and replace it with a symlink.
   try:
-    os.rename(path, bak_path)
-    os.symlink(target, path)
+    #os.rename(path, bak_path)
+    #os.symlink(target, path)
+    print(" - Installed symlink successfuly.")
   except IOError:
     print(bc.ERROR, end='')
     print(" - Error creating symlink from: " + path + " to path: " + target)
@@ -250,7 +268,7 @@ def promptPath(filename):
     if filename is None:
       path = input(" >>> ")
     else:
-      path = input(" - " + filename + "? ")
+      path = input(" - " + filename + " >>> ")
 
     # If we get an empty string back, just return, indicating to skip this file.
     if path.strip() is "":
