@@ -34,6 +34,11 @@ import readline
 import glob
 import fnmatch
 import filecmp
+import argparse
+import string
+
+# Arguments to the program
+args = None
 
 class bc:
     HEADER = '\033[95m'
@@ -44,7 +49,8 @@ class bc:
     END = '\033[0m'
 
 def main(argv):
-  printWithDelay("""
+  global args
+  print("""
     --- META CONFIG ---""")
 
   # Get the path of this file
@@ -69,20 +75,33 @@ def main(argv):
     location is detected, no action will be taken for that file or directory.
     """)
 
-  dry_run = True
-  interactive = True
+  parser = argparse.ArgumentParser()
+  parser.add_argument("-d", "--dry-run", default=False, action="store_true",
+    help = "run the script without making any changes to the filesystem.")
+  parser.add_argument("--non-interactive", default=False, action="store_true",
+    help = "don't prompt the user for any information.")
+  parser.add_argument("-m", "--modules", default=None,
+    help = "only install the modules listed after this option " +
+      "(comma separated).")
+  parser.add_argument("-e", "--exclude-modules", default=None,
+    help = "exclude the list of modules listed after this option" +
+      "(comma separated).")
 
-  modules_to_run = argv
-  ignored_modules = []
+  args = parser.parse_args()
+
+  # Convert the arguments into usable variables
+  if args.modules is not None:
+    modules_to_run = args.modules.split(",")
+  else:
+    modules_to_run = []
+  if args.exclude_modules is not None:
+    ignored_modules = args.exclude_modules.split(",")
+  else:
+    ignored_modules = []
+
+  args.dry_run = True
+
   ignored_files = ["metaconfig.yaml", "localmetaconfig.yaml"]
-
-  # if not interactive:
-  #   printWithDelay("We are about to install the following modules: " +
-  #     str(modules_to_run))
-  #   should_continue = promptYesNo("Do you wish to continue?")
-  #   if not should_continue:
-  #     printWithDelay("Goodbye.")
-  #     return 0
 
   for (module_meta_path, dir_name, file_names) in os.walk(meta_dir):
     module_meta_path = expandPath(module_meta_path)
@@ -142,7 +161,7 @@ def main(argv):
         printWithDelay(" - " + link)
       else:
         printWithDelay(" - " + link["file"])
-    if interactive and not promptYesNo("Install this module?"):
+    if not promptYesNo("Install this module?"):
       continue
 
     # If the location for the module is "?", we should ask each time.
@@ -155,13 +174,13 @@ def main(argv):
     # Install symlinks
     if "links" in module:
       for link in module["links"]:
-        result = installSymlink(link, module, module_meta_path, meta_dir,
-          dry_run)
+        result = installSymlink(link, module, module_meta_path, meta_dir)
 
-  printWithDelay("\n    --- Done ---")
+  printWithDelay("\n    ------ Done ------\n")
   return 0
 
-def installSymlink(symlink, module, module_meta_path, meta_dir, dry_run):
+def installSymlink(symlink, module, module_meta_path, meta_dir):
+  global args
   basepath = "?"
   if "location" in module:
     basepath = module["location"]
@@ -234,11 +253,8 @@ def installSymlink(symlink, module, module_meta_path, meta_dir, dry_run):
       printWithDelay(" - Symlink already present. Skipping.")
       return "ok"
 
-  # Do we need to create a backup?
-
-
   # Get the backup info
-  need_backup = False
+  need_backup = True
   current_backup, next_backup = getBackupPaths(path)
   if current_backup is not None:
     # Check if we need to create a backup by comparing the file with most recent
@@ -253,13 +269,16 @@ def installSymlink(symlink, module, module_meta_path, meta_dir, dry_run):
   # Here we go. Rename the file to the backup and replace it with a symlink.
   try:
     if need_backup:
-      printWithDelay("Creating backup: " + next_backup)
-      if not dry_run:
-        os.rename(path, next_backup)
+      printWithDelay(" - Creating backup: " + next_backup)
+      if not args.dry_run:
+        #os.rename(path, next_backup)
+        pass
     else:
-      printWithDelay(" - Exact backup already present: " + next_backup)
-    if not dry_run:
-      os.symlink(target, path)
+      if current_backup is not None:
+        printWithDelay(" - Exact backup already present: " + current_backup)
+    if not args.dry_run:
+      #os.symlink(target, path)
+      pass
     printWithDelay(" - Installed symlink successfuly.")
   except IOError:
     printWithDelay(" - Error creating symlink from: " + path + " to path: " +
@@ -267,6 +286,7 @@ def installSymlink(symlink, module, module_meta_path, meta_dir, dry_run):
     printWithDelay(" - Do we have the correct permissions?", error = True)
 
 def getFullPath(basepath, middle, filename, meta_dir):
+  global args
   if os.path.normpath(basepath) is "?":
     # If the basepath is "?" we should always prompt
     path = promptPath(filename)
@@ -318,6 +338,12 @@ def getFullPath(basepath, middle, filename, meta_dir):
   return path
 
 def promptPath(filename):
+  global args
+  if args.non_interactive:
+    printWithDelay("No path provided. Cannot prompt in non-interactive mode.",
+      error = True)
+    return None
+
   readline.set_completer_delims(' \t\n;')
   readline.parse_and_bind("tab: complete")
   readline.set_completer(promptPathCompleter)
@@ -344,14 +370,12 @@ def promptPath(filename):
       return None
 
     path = expandPath(path)
-    use = None
 
     # We were given a path to the parent folder maybe?
     if filename is not None:
       join = os.path.join(path, filename)
       if os.path.isdir(path) and os.path.lexists(join):
-        use = promptYesNo("Replace " + join + " ?")
-        if use:
+        if promptYesNo("Replace " + join + " ?"):
           return join
 
     # We get something that exists
@@ -359,8 +383,7 @@ def promptPath(filename):
       if filename is None:
         # This means we are trying to get the location for the whole module
         return path
-      use = promptYesNo("Replace " + path + " ?")
-      if use:
+      if promptYesNo("Replace " + path + " ?"):
         return path
       else:
         continue
@@ -369,8 +392,7 @@ def promptPath(filename):
     # the path to a new file, which is fine.
     base, _ = os.path.split(path)
     if os.path.lexists(base) and os.path.isdir(base):
-      use = promptYesNo("Replace " + path + " ?")
-      if use:
+      if promptYesNo("Replace " + path + " ?"):
         return path
       else:
         continue
@@ -391,6 +413,10 @@ def promptYesNo(question, default="yes"):
   The "answer" return value is one of "yes" or "no".
   Taken from: http://code.activestate.com/recipes/577058/
   """
+  global args
+  if args.non_interactive:
+    return None
+
   readline.set_completer(None)
   valid = {"yes":True, "y":True, "ye":True, "no":False, "n":False}
   if default == None:
@@ -410,8 +436,7 @@ def promptYesNo(question, default="yes"):
     elif choice in valid:
       return valid[choice]
     else:
-        sys.stdout.write("Please respond with 'yes' or 'no' "\
-                         "(or 'y' or 'n').\n")
+      sys.stdout.write("Please respond with 'yes' or 'no' (or 'y' or 'n').\n")
 
 
 def compareDirs(dir1, dir2):
@@ -480,12 +505,16 @@ def promptPathCompleter(text, state):
   return (glob.glob(text + '*')+[None])[state]
 
 def printWithDelay(text, error = False, delay = 0.003):
+  global args
   if error:
     print(bc.ERROR, end='')
-  for l in text:
-    sys.stdout.write(l)
-    sys.stdout.flush()
-    time.sleep(delay)
+  if args.non_interactive:
+    print(text, end='')
+  else:
+    for l in text:
+      sys.stdout.write(l)
+      sys.stdout.flush()
+      time.sleep(delay)
   print(bc.END)
 
 if __name__ == "__main__":
