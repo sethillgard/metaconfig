@@ -73,10 +73,13 @@ def main(argv):
   modules_to_run = argv
   ignored_modules = []
 
-  # should_continue = promptYesNo("Do you wish to continue?")
-  # if not should_continue:
-  #   print("Goodbye.")
-  #   return 0
+  if not interactive:
+    print("We are about to install the following modules: " +
+      str(modules_to_run))
+    should_continue = promptYesNo("Do you wish to continue?")
+    if not should_continue:
+      print("Goodbye.")
+      return 0
 
   for (module_meta_path, dir_name, file_names) in os.walk(meta_dir):
     module_meta_path = expandPath(module_meta_path)
@@ -129,12 +132,12 @@ def main(argv):
     # Install symlinks
     if "links" in module:
       for link in module["links"]:
-        result = installSymlink(link, module, module_meta_path)
+        result = installSymlink(link, module, module_meta_path, meta_dir)
 
   print("\n--- Done ---")
   return 0
 
-def installSymlink(symlink, module, module_meta_path):
+def installSymlink(symlink, module, module_meta_path, meta_dir):
   basepath = "?"
   if "location" in module:
     basepath = module["location"]
@@ -193,7 +196,7 @@ def installSymlink(symlink, module, module_meta_path):
     return "error"
 
   # Figure out where should we install thsi symlink
-  path = getFullPath(basepath, middle, filename)
+  path = getFullPath(basepath, middle, filename, meta_dir)
   if path is None:
     print (" - Skipping " + filename)
     return "ok"
@@ -221,14 +224,14 @@ def installSymlink(symlink, module, module_meta_path):
     print(" - Do we have the correct permissions?")
     print(bc.END, end='')
 
-def getFullPath(basepath, middle, filename):
+def getFullPath(basepath, middle, filename, meta_dir):
   if basepath is "?":
     # "?" Means always ask the user.
     path = promptPath(filename)
   elif middle is "":
     if basepath is "":
       # We have no information, just prompt.
-      path = promptPath(filename);
+      path = promptPath(filename)
     else:
       # We have a basepath and no middle.
       path = os.path.join(basepath, filename)
@@ -240,17 +243,37 @@ def getFullPath(basepath, middle, filename):
       # We actually have 3 parts.
       path = os.path.join(basepath, middle, filename)
 
-  # Skip this element?
-  if path is "" or path is None:
-    return None
+  path_valid = False
+  while not path_valid:
+    path_valid = True
 
-  # Whoa, lots of ifs. At this point we have a path. Let's make sure it exists,
-  # otherwise, prompt. We actually don't need it to exist, we just need the
-  # base dir to exist.
-  parent_dir, _ = os.path.split(path)
-  if not os.path.isdir(parent_dir):
-    print(" - Inexistent path: " + parent_dir)
-    path = promptPath(filename)
+    # Skip this element?
+    if path is "" or path is None:
+      return None
+
+    # Whoa, lots of ifs. At this point we have a path. Let's make sure it exists,
+    # otherwise, prompt. We actually don't need it to exist, we just need the
+    # base dir to exist.
+    parent_dir, _ = os.path.split(path)
+    if not os.path.isdir(parent_dir):
+      print(bc.ERROR, end='')
+      print(" - Inexistent path: " + parent_dir)
+      print(bc.END, end='')
+      path_valid = False
+
+    # Make sure the path provided is not in the metaconfig folder
+    real_path = os.path.realpath(path)
+    real_meta_dir = os.path.realpath(meta_dir)
+    length = len(real_meta_dir)
+    if len(real_path) >= length and real_path[:length] == meta_dir:
+      print(bc.ERROR, end='')
+      print("Error: The path provided is inside the metaconfig folder.")
+      print("Please provide a path to the local file you want replaced.")
+      print(bc.END, end='')
+      path_valid = False
+
+    if not path_valid:
+      path = promptPath(filename)
 
   return path
 
@@ -262,9 +285,10 @@ def promptPath(filename):
   path = None
   while True:
     if filename is not None:
-      print(" - Provide a path for " + filename)
-    print(" - You can press tab to autocomplete.")
-    print(" - Leave empty to skip.")
+      print(" - Provide a path for the local " + filename +
+        " in this computer.")
+    print(" - You can press tab to autocomplete. " +
+      "Leave empty to skip this file.")
     if filename is None:
       path = input(" >>> ")
     else:
@@ -286,7 +310,9 @@ def promptPath(filename):
     if os.path.lexists(base) and os.path.isdir(base):
       return path
 
+    print(bc.ERROR, end='')
     print("Invalid path. Please try again.")
+    print(bc.END, end='')
 
   raise ValueError("We should never make it here.")
   return None
@@ -335,9 +361,6 @@ def getNextBak(path):
     bak_path = path + ".bak" + str(i)
     if not os.path.lexists(bak_path):
       return bak_path
-
-def usage():
-  print("""Usage text""")
 
 def promptPathCompleter(text, state):
   text = expandPath(text)
