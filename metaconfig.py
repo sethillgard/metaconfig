@@ -36,6 +36,7 @@ import fnmatch
 import filecmp
 import argparse
 import string
+import shutil
 
 # Arguments to the program
 args = None
@@ -99,8 +100,6 @@ def main(argv):
   else:
     ignored_modules = []
 
-  args.dry_run = True
-
   ignored_files = ["metaconfig.yaml", "localmetaconfig.yaml"]
 
   for (module_meta_path, dir_name, file_names) in os.walk(meta_dir):
@@ -139,7 +138,8 @@ def main(argv):
       module = yaml.load(stream)
 
     # Infer links from the files in the module
-    if "infer_links" in module and module["infer_links"]:
+    if not "links" in module or "infer_links" in module and \
+        module["infer_links"]:
       if not "location" in module:
         module["location"] = "?"
       if not "links" in module:
@@ -254,35 +254,34 @@ def installSymlink(symlink, module, module_meta_path, meta_dir):
       return "ok"
 
   # Get the backup info
-  need_backup = True
-  current_backup, next_backup = getBackupPaths(path)
-  if current_backup is not None:
-    # Check if we need to create a backup by comparing the file with most recent
-    # backup, we do this differently if its just a file or a dir, but in both
-    # cases we asssume they are equal if the contents are the same
-    # (recursively).
-    if os.path.isdir(target):
-      need_backup = not compareDirs(target, current_backup)
-    else:
-      need_backup = not filecmp.cmp(target, current_backup)
+  need_backup = os.path.lexists(path)
+  if need_backup:
+    current_backup, next_backup = getBackupPaths(path)
+    if current_backup is not None:
+      # Check if we need to create a backup by comparing the file with most
+      # recent backup, we do this differently if its just a file or a dir, but
+      # in both cases we asssume they are equal if the names and contents are
+      # the same (recursively).
+      if os.path.isdir(target):
+        need_backup = not compareDirs(target, current_backup)
+      else:
+        need_backup = not filecmp.cmp(target, current_backup)
 
   # Here we go. Rename the file to the backup and replace it with a symlink.
   try:
     if need_backup:
       printWithDelay(" - Creating backup: " + next_backup)
       if not args.dry_run:
-        #os.rename(path, next_backup)
-        pass
+        shutil.move(path, next_backup)
     else:
       if current_backup is not None:
         printWithDelay(" - Exact backup already present: " + current_backup)
     if not args.dry_run:
-      #os.symlink(target, path)
-      pass
+        os.symlink(target, path)
     printWithDelay(" - Installed symlink successfuly.")
   except IOError:
-    printWithDelay(" - Error creating symlink from: " + path + " to path: " +
-      target, error = True)
+    printWithDelay(" - Error creating symlink from: " + path , error = True)
+    printWithDelay(" - To: " + target , error = True)
     printWithDelay(" - Do we have the correct permissions?", error = True)
 
 def getFullPath(basepath, middle, filename, meta_dir):
@@ -321,16 +320,19 @@ def getFullPath(basepath, middle, filename, meta_dir):
       printWithDelay(" - Inexistent path: " + parent_dir, error = True)
       path_valid = False
 
-    # Make sure the path provided is not in the metaconfig folder
-    real_path = os.path.realpath(path)
-    real_meta_dir = os.path.realpath(meta_dir)
-    length = len(real_meta_dir)
-    if len(real_path) >= length and real_path[:length] == meta_dir:
-      printWithDelay("Error: The path provided is inside the metaconfig " +
-        "folder.", error = True)
-      printWithDelay("Please provide a path to the local file you want " +
-        "replaced.", error = True)
-      path_valid = False
+    # Make sure the path provided is not in the metaconfig folder.
+    # The only valid case for this is if it's a symlink on the leaf, meaning
+    # its a symlink createad by this script or something similar.
+    if not os.path.islink(path):
+      real_path = os.path.realpath(path)
+      real_meta_dir = os.path.realpath(meta_dir)
+      length = len(real_meta_dir)
+      if len(real_path) >= length and real_path[:length] == meta_dir:
+        printWithDelay("Error: The path provided is inside the metaconfig " +
+          "folder.", error = True)
+        printWithDelay("Please provide a path to the local file you want " +
+          "replaced.", error = True)
+        path_valid = False
 
     if not path_valid:
       path = promptPath(filename)
