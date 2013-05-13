@@ -417,7 +417,7 @@ def promptYesNo(question, default="yes"):
   """
   global args
   if args.non_interactive:
-    return None
+    return True
 
   readline.set_completer(None)
   valid = {"yes":True, "y":True, "ye":True, "no":False, "n":False}
