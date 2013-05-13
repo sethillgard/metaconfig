@@ -33,6 +33,7 @@ import os.path
 import readline
 import glob
 import fnmatch
+import filecmp
 
 class bc:
     HEADER = '\033[95m'
@@ -68,9 +69,8 @@ def main(argv):
     location is detected, no action will be taken for that file or directory.
     """)
 
-  interactive = False
-  if len(argv) is 0:
-    interactive = True
+  dry_run = True
+  interactive = True
 
   modules_to_run = argv
   ignored_modules = []
@@ -94,8 +94,10 @@ def main(argv):
     if module_meta_path is meta_dir:
       continue
 
+    module = None
+
     # Ignore modules not listed as parameters, ignored ones, and hidden ones
-    if not interactive and module_name not in modules_to_run: continue
+    if len(modules_to_run) > 0 and module_name not in modules_to_run: continue
     if module_name in ignored_modules: continue
     if module_name[0] is ".": continue
 
@@ -104,13 +106,18 @@ def main(argv):
     elif "metaconfig.yaml" in file_names:
       stream = open(module_meta_path + "/metaconfig.yaml", 'r')
     else:
-      continue
+      if os.sep in module_name:
+        continue
+      # For top level modules without metaconfig.yaml file, infer files and
+      # prompt for the location.
+      module = {"location": "?", "infer_links": True}
 
     printWithDelay("\n--- Module: " + module_name + " ---")
     if "localmetaconfig.yaml" in file_names:
       printWithDelay("Using localmetaconfig.yaml")
 
-    module = yaml.load(stream)
+    if module is None:
+      module = yaml.load(stream)
 
     # Infer links from the files in the module
     if "infer_links" in module and module["infer_links"]:
@@ -123,15 +130,18 @@ def main(argv):
         x not in ignored_files]
       module["links"] = list(set(module["links"] + infered_links))
 
+    if not "links" in module or len(module["links"]) == 0:
+      printWithDelay("This module contains no files. Skipping.")
+      continue
+
     # Print a list of links to be installed and ask the user if the module
     # should be installed.
     printWithDelay("This module includes the following files: ")
-    if "links" in module:
-      for link in module["links"]:
-        if isinstance(link, str):
-          printWithDelay(" - " + link)
-        else:
-          printWithDelay(" - " + link["file"])
+    for link in module["links"]:
+      if isinstance(link, str):
+        printWithDelay(" - " + link)
+      else:
+        printWithDelay(" - " + link["file"])
     if interactive and not promptYesNo("Install this module?"):
       continue
 
@@ -145,12 +155,13 @@ def main(argv):
     # Install symlinks
     if "links" in module:
       for link in module["links"]:
-        result = installSymlink(link, module, module_meta_path, meta_dir)
+        result = installSymlink(link, module, module_meta_path, meta_dir,
+          dry_run)
 
   printWithDelay("\n    --- Done ---")
   return 0
 
-def installSymlink(symlink, module, module_meta_path, meta_dir):
+def installSymlink(symlink, module, module_meta_path, meta_dir, dry_run):
   basepath = "?"
   if "location" in module:
     basepath = module["location"]
@@ -223,15 +234,32 @@ def installSymlink(symlink, module, module_meta_path, meta_dir):
       printWithDelay(" - Symlink already present. Skipping.")
       return "ok"
 
-  # Get the backup info
-  bak_path = getNextBak(path)
-  printWithDelay(" - Creating backup: " + bak_path)
+  # Do we need to create a backup?
 
+
+  # Get the backup info
+  need_backup = False
+  current_backup, next_backup = getBackupPaths(path)
+  if current_backup is not None:
+    # Check if we need to create a backup by comparing the file with most recent
+    # backup, we do this differently if its just a file or a dir, but in both
+    # cases we asssume they are equal if the contents are the same
+    # (recursively).
+    if os.path.isdir(target):
+      need_backup = not compareDirs(target, current_backup)
+    else:
+      need_backup = not filecmp.cmp(target, current_backup)
 
   # Here we go. Rename the file to the backup and replace it with a symlink.
   try:
-    #os.rename(path, bak_path)
-    #os.symlink(target, path)
+    if need_backup:
+      printWithDelay("Creating backup: " + next_backup)
+      if not dry_run:
+        os.rename(path, next_backup)
+    else:
+      printWithDelay(" - Exact backup already present: " + next_backup)
+    if not dry_run:
+      os.symlink(target, path)
     printWithDelay(" - Installed symlink successfuly.")
   except IOError:
     printWithDelay(" - Error creating symlink from: " + path + " to path: " +
@@ -296,11 +324,16 @@ def promptPath(filename):
 
   path = None
   while True:
-    if filename is not None:
+    if filename is None:
+      printWithDelay(" - Provide the base path (local) for the all the files " +
+        "in this module.")
+      printWithDelay(" - You can press tab to autocomplete. " +
+        "Leave empty to enter the location of each link individually.")
+    else:
       printWithDelay(" - Provide a path for the local " + filename +
         " in this computer.")
-    printWithDelay(" - You can press tab to autocomplete. " +
-      "Leave empty to skip this file.")
+      printWithDelay(" - You can press tab to autocomplete. " +
+        "Leave empty to skip this file.")
     if filename is None:
       path = input(" >>> ")
     else:
@@ -380,17 +413,60 @@ def promptYesNo(question, default="yes"):
         sys.stdout.write("Please respond with 'yes' or 'no' "\
                          "(or 'y' or 'n').\n")
 
+
+def compareDirs(dir1, dir2):
+  """
+  Compare two directories recursively. Files in each directory are
+  assumed to be equal if their names and contents are equal.
+
+  @param dir1: First directory path
+  @param dir2: Second directory path
+
+  @return: True if the directory trees are the same and
+      there were no errors while accessing the directories or files,
+      False otherwise.
+  Taken from: http://stackoverflow.com/a/6681395/131319
+  """
+  dirs_cmp = filecmp.dircmp(dir1, dir2)
+  if len(dirs_cmp.left_only)>0 or len(dirs_cmp.right_only)>0 or \
+    len(dirs_cmp.funny_files)>0:
+    return False
+  (_, mismatch, errors) =  filecmp.cmpfiles(
+    dir1, dir2, dirs_cmp.common_files, shallow=False)
+  if len(mismatch)>0 or len(errors)>0:
+    return False
+  for common_dir in dirs_cmp.common_dirs:
+    new_dir1 = os.path.join(dir1, common_dir)
+    new_dir2 = os.path.join(dir2, common_dir)
+    if not compareDirs(new_dir1, new_dir2):
+      return False
+  return True
+
 def expandPath(path):
   return os.path.expandvars(os.path.expanduser(path))
 
-def getNextBak(path):
+def getBackupPaths(path):
+  """
+  Determines the current and next backup names for the specified path.
+
+  @param path: The path to the file or folder to be checked.
+
+  @return: A string consisting of path +  ".bak" + n where n is the biggest
+    (most recent) backup.
+
+  @return: A string consisting of path +  ".bak" + n where n is the next
+     available (non-existent) backup path.
+  """
   path = expandPath(os.path.normpath(path))
   i = 0
+  current = None
+  next = None
   while True:
     i += 1
-    bak_path = path + ".bak" + str(i)
-    if not os.path.lexists(bak_path):
-      return bak_path
+    next = path + ".bak" + str(i)
+    if not os.path.lexists(next):
+      return current, next
+    current = next
 
 def isTempFile(filename):
   temp = ["*.*~", "*.swp", ".DS_Store"]
