@@ -32,6 +32,7 @@ import yaml
 import os.path
 import readline
 import glob
+import fnmatch
 
 class bc:
     HEADER = '\033[95m'
@@ -73,14 +74,15 @@ def main(argv):
 
   modules_to_run = argv
   ignored_modules = []
+  ignored_files = ["metaconfig.yaml", "localmetaconfig.yaml"]
 
-  if not interactive:
-    printWithDelay("We are about to install the following modules: " +
-      str(modules_to_run))
-    should_continue = promptYesNo("Do you wish to continue?")
-    if not should_continue:
-      printWithDelay("Goodbye.")
-      return 0
+  # if not interactive:
+  #   printWithDelay("We are about to install the following modules: " +
+  #     str(modules_to_run))
+  #   should_continue = promptYesNo("Do you wish to continue?")
+  #   if not should_continue:
+  #     printWithDelay("Goodbye.")
+  #     return 0
 
   for (module_meta_path, dir_name, file_names) in os.walk(meta_dir):
     module_meta_path = expandPath(module_meta_path)
@@ -110,18 +112,28 @@ def main(argv):
 
     module = yaml.load(stream)
 
-    # If we are in interactive mode, print a list of links to be installed and
-    # ask the user if the module should be installed.
-    if interactive:
-      printWithDelay("This module includes the following files: ")
-      if "links" in module:
-        for link in module["links"]:
-          if isinstance(link, str):
-            printWithDelay(" - " + link)
-          else:
-            printWithDelay(" - " + link["file"])
-      if not promptYesNo("Install this module?"):
-        continue
+    # Infer links from the files in the module
+    if "infer_links" in module and module["infer_links"]:
+      if not "location" in module:
+        module["location"] = "?"
+      if not "links" in module:
+        module["links"] = []
+      infered_links = os.listdir(module_meta_path)
+      infered_links = [x for x in infered_links if not isTempFile(x) and
+        x not in ignored_files]
+      module["links"] = list(set(module["links"] + infered_links))
+
+    # Print a list of links to be installed and ask the user if the module
+    # should be installed.
+    printWithDelay("This module includes the following files: ")
+    if "links" in module:
+      for link in module["links"]:
+        if isinstance(link, str):
+          printWithDelay(" - " + link)
+        else:
+          printWithDelay(" - " + link["file"])
+    if interactive and not promptYesNo("Install this module?"):
+      continue
 
     # If the location for the module is "?", we should ask each time.
     if "location" in module and module["location"] == "?":
@@ -302,14 +314,18 @@ def promptPath(filename):
     use = None
 
     # We were given a path to the parent folder maybe?
-    join = os.path.join(path, filename)
-    if os.path.isdir(path) and os.path.lexists(join):
-      use = promptYesNo("Replace " + join + " ?")
-      if use:
-        return join
+    if filename is not None:
+      join = os.path.join(path, filename)
+      if os.path.isdir(path) and os.path.lexists(join):
+        use = promptYesNo("Replace " + join + " ?")
+        if use:
+          return join
 
     # We get something that exists
     if os.path.lexists(path):
+      if filename is None:
+        # This means we are trying to get the location for the whole module
+        return path
       use = promptYesNo("Replace " + path + " ?")
       if use:
         return path
@@ -376,11 +392,18 @@ def getNextBak(path):
     if not os.path.lexists(bak_path):
       return bak_path
 
+def isTempFile(filename):
+  temp = ["*.*~", "*.swp", ".DS_Store"]
+  for pattern in temp:
+    if fnmatch.fnmatch(filename, pattern):
+      return True
+  return False
+
 def promptPathCompleter(text, state):
   text = expandPath(text)
   return (glob.glob(text + '*')+[None])[state]
 
-def printWithDelay(text, error = False, delay = 0.005):
+def printWithDelay(text, error = False, delay = 0.003):
   if error:
     print(bc.ERROR, end='')
   for l in text:
