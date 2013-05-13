@@ -48,7 +48,7 @@ def main(argv):
   # Get the path of this file
   meta_dir = expandPath(os.path.dirname(os.path.realpath(__file__)))
 
-  printWithDelay("""
+  print("""
     This script will replace some of the files on this computer according to the
     module configuration in: """ + meta_dir + """.
 
@@ -65,7 +65,7 @@ def main(argv):
 
     Don't worry about running this multiple times. If a symlink to the right
     location is detected, no action will be taken for that file or directory.
-    """, delay = 0)
+    """)
 
   interactive = False
   if len(argv) is 0:
@@ -124,10 +124,10 @@ def main(argv):
         continue
 
     # If the location for the module is "?", we should ask each time.
-    if "location" in module and module["location"] is "?":
+    if "location" in module and module["location"] == "?":
       printWithDelay("Please provide the base path for this module.")
       location = promptPath(None)
-      if location is not None:
+      if location is not None and location != "":
         module["location"] = location
 
     # Install symlinks
@@ -135,7 +135,7 @@ def main(argv):
       for link in module["links"]:
         result = installSymlink(link, module, module_meta_path, meta_dir)
 
-  printWithDelay("\n--- Done ---")
+  printWithDelay("\n    --- Done ---")
   return 0
 
 def installSymlink(symlink, module, module_meta_path, meta_dir):
@@ -145,7 +145,6 @@ def installSymlink(symlink, module, module_meta_path, meta_dir):
 
   if isinstance(symlink, str):
     filename = symlink
-    enabled = True
   else:
     filename = symlink["file"]
 
@@ -162,12 +161,15 @@ def installSymlink(symlink, module, module_meta_path, meta_dir):
     return "error"
 
   # Cleanup
+  if basepath[-1:] != os.sep:
+    basepath += os.sep
+
   filename = expandPath(filename)
   basepath = expandPath(basepath)
 
   # Take out the last "/" if it's the last character so that split works
   # correctly.
-  if filename[-1:] is "/":
+  if filename[-1:] is os.sep:
     filename = filename[:-1]
 
   # We do this because the filename may add to the basepath, or override it.
@@ -190,8 +192,10 @@ def installSymlink(symlink, module, module_meta_path, meta_dir):
 
   # Make sure we have a file of the same name in the metaconfig folder.
   if not os.path.lexists(target):
-    printWithDelay(" - Error: No matching element for " + filename + " at " + target, error = True)
-    printWithDelay(" - This would create a broken symlink. Skipping this element.", error = True)
+    printWithDelay(" - Error: No matching element for " + filename + " at " +
+      target, error = True)
+    printWithDelay(" - This would create a broken symlink. Skipping this " +
+      "element.", error = True)
     return "error"
 
   # Figure out where should we install thsi symlink
@@ -218,12 +222,13 @@ def installSymlink(symlink, module, module_meta_path, meta_dir):
     #os.symlink(target, path)
     printWithDelay(" - Installed symlink successfuly.")
   except IOError:
-    printWithDelay(" - Error creating symlink from: " + path + " to path: " + target, error = True)
-    printWithDelay(" - Do we have the correct permissions?")
+    printWithDelay(" - Error creating symlink from: " + path + " to path: " +
+      target, error = True)
+    printWithDelay(" - Do we have the correct permissions?", error = True)
 
 def getFullPath(basepath, middle, filename, meta_dir):
-  if basepath is "?":
-    # "?" Means always ask the user.
+  if os.path.normpath(basepath) is "?":
+    # If the basepath is "?" we should always prompt
     path = promptPath(filename)
   elif middle is "":
     if basepath is "":
@@ -261,8 +266,10 @@ def getFullPath(basepath, middle, filename, meta_dir):
     real_meta_dir = os.path.realpath(meta_dir)
     length = len(real_meta_dir)
     if len(real_path) >= length and real_path[:length] == meta_dir:
-      printWithDelay("Error: The path provided is inside the metaconfig folder.", error = True)
-      printWithDelay("Please provide a path to the local file you want replaced.", error = True)
+      printWithDelay("Error: The path provided is inside the metaconfig " +
+        "folder.", error = True)
+      printWithDelay("Please provide a path to the local file you want " +
+        "replaced.", error = True)
       path_valid = False
 
     if not path_valid:
@@ -292,16 +299,32 @@ def promptPath(filename):
       return None
 
     path = expandPath(path)
+    use = None
+
+    # We were given a path to the parent folder maybe?
+    join = os.path.join(path, filename)
+    if os.path.isdir(path) and os.path.lexists(join):
+      use = promptYesNo("Replace " + join + " ?")
+      if use:
+        return join
 
     # We get something that exists
     if os.path.lexists(path):
-      return path
+      use = promptYesNo("Replace " + path + " ?")
+      if use:
+        return path
+      else:
+        continue
 
     # The full path fails, but the base path is correct, so we are being given
     # the path to a new file, which is fine.
     base, _ = os.path.split(path)
     if os.path.lexists(base) and os.path.isdir(base):
-      return path
+      use = promptYesNo("Replace " + path + " ?")
+      if use:
+        return path
+      else:
+        continue
 
     printWithDelay("Invalid path. Please try again.", error = True)
 
