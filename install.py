@@ -26,6 +26,7 @@
 # THE SOFTWARE.
 
 import os
+import time
 import sys
 import yaml
 import os.path
@@ -41,13 +42,13 @@ class bc:
     END = '\033[0m'
 
 def main(argv):
-  print("""
+  printWithDelay("""
     --- META CONFIG ---""")
 
   # Get the path of this file
   meta_dir = expandPath(os.path.dirname(os.path.realpath(__file__)))
 
-  print("""
+  printWithDelay("""
     This script will replace some of the files on this computer according to the
     module configuration in: """ + meta_dir + """.
 
@@ -64,7 +65,7 @@ def main(argv):
 
     Don't worry about running this multiple times. If a symlink to the right
     location is detected, no action will be taken for that file or directory.
-    """)
+    """, delay = 0)
 
   interactive = False
   if len(argv) is 0:
@@ -74,11 +75,11 @@ def main(argv):
   ignored_modules = []
 
   if not interactive:
-    print("We are about to install the following modules: " +
+    printWithDelay("We are about to install the following modules: " +
       str(modules_to_run))
     should_continue = promptYesNo("Do you wish to continue?")
     if not should_continue:
-      print("Goodbye.")
+      printWithDelay("Goodbye.")
       return 0
 
   for (module_meta_path, dir_name, file_names) in os.walk(meta_dir):
@@ -103,28 +104,28 @@ def main(argv):
     else:
       continue
 
-    print("\n--- Module: " + module_name + " ---")
+    printWithDelay("\n--- Module: " + module_name + " ---")
     if "localmetaconfig.yaml" in file_names:
-      print("Using localmetaconfig.yaml")
+      printWithDelay("Using localmetaconfig.yaml")
 
     module = yaml.load(stream)
 
     # If we are in interactive mode, print a list of links to be installed and
     # ask the user if the module should be installed.
     if interactive:
-      print("This module includes the following files: ")
+      printWithDelay("This module includes the following files: ")
       if "links" in module:
         for link in module["links"]:
           if isinstance(link, str):
-            print(" - " + link)
+            printWithDelay(" - " + link)
           else:
-            print(" - " + link["file"])
+            printWithDelay(" - " + link["file"])
       if not promptYesNo("Install this module?"):
         continue
 
     # If the location for the module is "?", we should ask each time.
     if "location" in module and module["location"] is "?":
-      print("Please provide the base path for this module.")
+      printWithDelay("Please provide the base path for this module.")
       location = promptPath(None)
       if location is not None:
         module["location"] = location
@@ -134,7 +135,7 @@ def main(argv):
       for link in module["links"]:
         result = installSymlink(link, module, module_meta_path, meta_dir)
 
-  print("\n--- Done ---")
+  printWithDelay("\n--- Done ---")
   return 0
 
 def installSymlink(symlink, module, module_meta_path, meta_dir):
@@ -155,9 +156,9 @@ def installSymlink(symlink, module, module_meta_path, meta_dir):
       basepath = symlink["location"]
 
   if filename is "":
-    print(bc.ERROR, end='')
-    print("Error: Found empty filename for symlink.")
-    print(bc.END, end='')
+    printWithDelay(bc.ERROR, end='')
+    printWithDelay("Error: Found empty filename for symlink.")
+    printWithDelay(bc.END, end='')
     return "error"
 
   # Cleanup
@@ -185,14 +186,12 @@ def installSymlink(symlink, module, module_meta_path, meta_dir):
   if not isinstance(symlink, str) and "target" in symlink:
     target = expandPath(os.path.join(module_meta_path, symlink["target"]))
 
-  print("Installing symlink: " + old_filename)
+  printWithDelay("Installing symlink: " + old_filename)
 
   # Make sure we have a file of the same name in the metaconfig folder.
   if not os.path.lexists(target):
-    print(bc.ERROR, end='')
-    print(" - Error: No matching element for " + filename + " at " + target)
-    print(" - This would create a broken symlink. Skipping this element.")
-    print(bc.END, end='')
+    printWithDelay(" - Error: No matching element for " + filename + " at " + target, error = True)
+    printWithDelay(" - This would create a broken symlink. Skipping this element.", error = True)
     return "error"
 
   # Figure out where should we install thsi symlink
@@ -205,24 +204,22 @@ def installSymlink(symlink, module, module_meta_path, meta_dir):
   # This possibly means this tool ran before.
   if os.path.islink(path):
     if os.path.samefile(os.path.realpath(path), target):
-      print(" - Symlink already present. Skipping.")
+      printWithDelay(" - Symlink already present. Skipping.")
       return "ok"
 
   # Get the backup info
   bak_path = getNextBak(path)
-  print(" - Creating backup: " + bak_path)
+  printWithDelay(" - Creating backup: " + bak_path)
 
 
   # Here we go. Rename the file to the backup and replace it with a symlink.
   try:
     #os.rename(path, bak_path)
     #os.symlink(target, path)
-    print(" - Installed symlink successfuly.")
+    printWithDelay(" - Installed symlink successfuly.")
   except IOError:
-    print(bc.ERROR, end='')
-    print(" - Error creating symlink from: " + path + " to path: " + target)
-    print(" - Do we have the correct permissions?")
-    print(bc.END, end='')
+    printWithDelay(" - Error creating symlink from: " + path + " to path: " + target, error = True)
+    printWithDelay(" - Do we have the correct permissions?")
 
 def getFullPath(basepath, middle, filename, meta_dir):
   if basepath is "?":
@@ -256,9 +253,7 @@ def getFullPath(basepath, middle, filename, meta_dir):
     # base dir to exist.
     parent_dir, _ = os.path.split(path)
     if not os.path.isdir(parent_dir):
-      print(bc.ERROR, end='')
-      print(" - Inexistent path: " + parent_dir)
-      print(bc.END, end='')
+      printWithDelay(" - Inexistent path: " + parent_dir, error = True)
       path_valid = False
 
     # Make sure the path provided is not in the metaconfig folder
@@ -266,10 +261,8 @@ def getFullPath(basepath, middle, filename, meta_dir):
     real_meta_dir = os.path.realpath(meta_dir)
     length = len(real_meta_dir)
     if len(real_path) >= length and real_path[:length] == meta_dir:
-      print(bc.ERROR, end='')
-      print("Error: The path provided is inside the metaconfig folder.")
-      print("Please provide a path to the local file you want replaced.")
-      print(bc.END, end='')
+      printWithDelay("Error: The path provided is inside the metaconfig folder.", error = True)
+      printWithDelay("Please provide a path to the local file you want replaced.", error = True)
       path_valid = False
 
     if not path_valid:
@@ -285,9 +278,9 @@ def promptPath(filename):
   path = None
   while True:
     if filename is not None:
-      print(" - Provide a path for the local " + filename +
+      printWithDelay(" - Provide a path for the local " + filename +
         " in this computer.")
-    print(" - You can press tab to autocomplete. " +
+    printWithDelay(" - You can press tab to autocomplete. " +
       "Leave empty to skip this file.")
     if filename is None:
       path = input(" >>> ")
@@ -310,9 +303,7 @@ def promptPath(filename):
     if os.path.lexists(base) and os.path.isdir(base):
       return path
 
-    print(bc.ERROR, end='')
-    print("Invalid path. Please try again.")
-    print(bc.END, end='')
+    printWithDelay("Invalid path. Please try again.", error = True)
 
   raise ValueError("We should never make it here.")
   return None
@@ -365,6 +356,15 @@ def getNextBak(path):
 def promptPathCompleter(text, state):
   text = expandPath(text)
   return (glob.glob(text + '*')+[None])[state]
+
+def printWithDelay(text, error = False, delay = 0.005):
+  if error:
+    print(bc.ERROR, end='')
+  for l in text:
+    sys.stdout.write(l)
+    sys.stdout.flush()
+    time.sleep(delay)
+  print(bc.END)
 
 if __name__ == "__main__":
     main(sys.argv[1:])
