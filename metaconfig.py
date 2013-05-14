@@ -128,7 +128,7 @@ def main(argv):
         continue
       # For top level modules without metaconfig.yaml file, infer files and
       # prompt for the location.
-      module = {"location": "?", "infer_links": True}
+      module = {"location": "?", "infer_symlinks": True}
 
     printWithDelay("\n--- Module: " + module_name + " ---")
     if "localmetaconfig.yaml" in file_names:
@@ -137,26 +137,32 @@ def main(argv):
     if module is None:
       module = yaml.load(stream)
 
+    # Should we skip this one?
+    if ("enabled" in module and module["enabled"] is False) or \
+        ("ignore" in module and module["ignore"] is True):
+      printWithDelay("Module not enabled. Skipping.")
+      continue
+
     # Infer links from the files in the module
-    if not "links" in module or "infer_links" in module and \
-        module["infer_links"]:
+    if not "symlinks" in module or "infer_symlinks" in module and \
+        module["infer_symlinks"]:
       if not "location" in module:
         module["location"] = "?"
-      if not "links" in module:
-        module["links"] = []
+      if not "symlinks" in module:
+        module["symlinks"] = []
       infered_links = os.listdir(module_meta_path)
       infered_links = [x for x in infered_links if not isTempFile(x) and
         x not in ignored_files]
-      module["links"] = list(set(module["links"] + infered_links))
+      module["symlinks"] = list(set(module["symlinks"] + infered_links))
 
-    if not "links" in module or len(module["links"]) == 0:
+    if not "symlinks" in module or len(module["symlinks"]) == 0:
       printWithDelay("This module contains no files. Skipping.")
       continue
 
     # Print a list of links to be installed and ask the user if the module
     # should be installed.
     printWithDelay("This module includes the following files: ")
-    for link in module["links"]:
+    for link in module["symlinks"]:
       if isinstance(link, str):
         printWithDelay(" - " + link)
       else:
@@ -172,8 +178,8 @@ def main(argv):
         module["location"] = location
 
     # Install symlinks
-    if "links" in module:
-      for link in module["links"]:
+    if "symlinks" in module:
+      for link in module["symlinks"]:
         result = installSymlink(link, module, module_meta_path, meta_dir)
 
   printWithDelay("\n    ------ Done ------\n")
@@ -190,7 +196,11 @@ def installSymlink(symlink, module, module_meta_path, meta_dir):
   else:
     filename = symlink["file"]
 
-    if "enabled" in symlink and symlink["enabled"] is False:
+    # Should we skip this one?
+    # Should we skip this one?
+    if ("enabled" in symlink and symlink["enabled"] is False) or \
+        ("ignore" in symlink and symlink["ignore"] is True):
+      printWithDelay("Symlink not enabled. Skipping.")
       return
 
     if "location" in symlink:
@@ -249,12 +259,15 @@ def installSymlink(symlink, module, module_meta_path, meta_dir):
   # If the file is already a symlink to where we want it, do nothing.
   # This possibly means this tool ran before.
   if os.path.islink(path):
-    if os.path.samefile(os.path.realpath(path), target):
+    real_path = os.path.realpath(path)
+    if os.path.lexists(real_path) and os.path.samefile(real_path, target):
       printWithDelay(" - Symlink already present. Skipping.")
       return "ok"
 
   # Get the backup info
   need_backup = os.path.lexists(path)
+  current_backup = None
+  next_backup = None
   if need_backup:
     current_backup, next_backup = getBackupPaths(path)
     if current_backup is not None:
