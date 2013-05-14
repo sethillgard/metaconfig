@@ -81,24 +81,16 @@ def main(argv):
     help = "run the script without making any changes to the filesystem.")
   parser.add_argument("--non-interactive", default=False, action="store_true",
     help = "don't prompt the user for any information.")
-  parser.add_argument("-m", "--modules", default=None,
-    help = "only install the modules listed after this option " +
-      "(comma separated).")
-  parser.add_argument("-e", "--exclude-modules", default=None,
-    help = "exclude the list of modules listed after this option" +
-      "(comma separated).")
+  parser.add_argument("-m", "--modules", nargs='+', default = [],
+    help = "only install the modules listed after this option.")
+  parser.add_argument("-e", "--exclude-modules", nargs='+', default = [],
+    help = "exclude the list of modules listed after this option.")
+  parser.add_argument("-f", "--flavors", nargs='+', default = [],
+    help = "use the flavors listed after this option. Flavors allow you to " +
+      "filter the modules and files installed when this script runs. See the " +
+      "website above for more info.")
 
   args = parser.parse_args()
-
-  # Convert the arguments into usable variables
-  if args.modules is not None:
-    modules_to_run = args.modules.split(",")
-  else:
-    modules_to_run = []
-  if args.exclude_modules is not None:
-    ignored_modules = args.exclude_modules.split(",")
-  else:
-    ignored_modules = []
 
   ignored_files = ["metaconfig.yaml", "localmetaconfig.yaml"]
 
@@ -114,9 +106,9 @@ def main(argv):
 
     module = None
 
-    # Ignore modules not listed as parameters, ignored ones, and hidden ones
-    if len(modules_to_run) > 0 and module_name not in modules_to_run: continue
-    if module_name in ignored_modules: continue
+    # Ignore modules not listed as parameters, ignored ones, and hidden ones.
+    if len(args.modules) > 0 and module_name not in args.modules: continue
+    if module_name in args.exclude_modules: continue
     if module_name[0] is ".": continue
 
     if "localmetaconfig.yaml" in file_names:
@@ -130,18 +122,29 @@ def main(argv):
       # prompt for the location.
       module = {"location": "?", "infer_symlinks": True}
 
-    printWithDelay("\n--- Module: " + module_name + " ---")
-    if "localmetaconfig.yaml" in file_names:
-      printWithDelay("Using localmetaconfig.yaml")
-
+    # Load it's yaml file.
     if module is None:
       module = yaml.load(stream)
+
+    printWithDelay("\n--- Module: " + module_name + " ---")
+    if "localmetaconfig.yaml" in file_names:
+      printWithDelay(" - Using localmetaconfig.yaml")
+    elif "metaconfig.yaml" in file_names:
+      printWithDelay(" - Using metaconfig.yaml")
 
     # Should we skip this one?
     if ("enabled" in module and module["enabled"] is False) or \
         ("ignore" in module and module["ignore"] is True):
-      printWithDelay("Module not enabled. Skipping.")
+      printWithDelay(" - Module not enabled. Skipping.")
       continue
+
+    # Check the flavors.
+    if "flavors" in module:
+      # If these lists don't intersect, just skip the module.
+      if not set(args.flavors) & set(module["flavors"]):
+        printWithDelay(" - Module has flavor requirements. Skipping because " +
+          "we are not running with the correct flavors.")
+        continue
 
     # Infer links from the files in the module
     if not "symlinks" in module or "infer_symlinks" in module and \
@@ -166,7 +169,10 @@ def main(argv):
       if isinstance(link, str):
         printWithDelay(" - " + link)
       else:
-        printWithDelay(" - " + link["file"])
+        if not "symlink" in link:
+          printWithDelay(" - [unnamed] -  This will throw an error!")
+        else:
+          printWithDelay(" - " + link["symlink"])
     if not promptYesNo("Install this module?"):
       continue
 
@@ -194,14 +200,25 @@ def installSymlink(symlink, module, module_meta_path, meta_dir):
   if isinstance(symlink, str):
     filename = symlink
   else:
-    filename = symlink["file"]
+    if not "symlink" in symlink:
+      printWithDelay("Error: Symlink as a dict without a 'symlink' field.",
+        error = True)
+      return "error"
+    filename = symlink["symlink"]
 
-    # Should we skip this one?
     # Should we skip this one?
     if ("enabled" in symlink and symlink["enabled"] is False) or \
         ("ignore" in symlink and symlink["ignore"] is True):
       printWithDelay("Symlink not enabled. Skipping.")
       return
+
+    # Check the flavors.
+    if "flavors" in symlink:
+      # If this lists don't intersect, just skip the symlink.
+      if not set(args.flavors) & set(module["flavors"]):
+        printWithDelay(" - Symlink has flavor requirements. Skipping because " +
+          "we are not running with the correct flavors.")
+        return "ok"
 
     if "location" in symlink:
       basepath = symlink["location"]
