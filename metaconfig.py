@@ -169,10 +169,10 @@ def main(argv):
       if isinstance(link, str):
         printWithDelay(" - " + link)
       else:
-        if not "symlink" in link:
+        if not "file" in link:
           printWithDelay(" - [unnamed] -  This will throw an error!")
         else:
-          printWithDelay(" - " + link["symlink"])
+          printWithDelay(" - " + link["file"])
     if not promptYesNo("Install this module?"):
       continue
 
@@ -200,11 +200,11 @@ def installSymlink(symlink, module, module_meta_path, meta_dir):
   if isinstance(symlink, str):
     filename = symlink
   else:
-    if not "symlink" in symlink:
+    if not "file" in symlink:
       printWithDelay("Error: Symlink as a dict without a 'symlink' field.",
         error = True)
       return "error"
-    filename = symlink["symlink"]
+    filename = symlink["file"]
 
     # Should we skip this one?
     if ("enabled" in symlink and symlink["enabled"] is False) or \
@@ -219,9 +219,6 @@ def installSymlink(symlink, module, module_meta_path, meta_dir):
         printWithDelay(" - Symlink has flavor requirements. Skipping because " +
           "we are not running with the correct flavors.")
         return "ok"
-
-    if "location" in symlink:
-      basepath = symlink["location"]
 
   if filename is "":
     printWithDelay(bc.ERROR, end='')
