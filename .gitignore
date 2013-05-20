@@ -36,8 +36,3 @@ nosetests.xml
 
 # Local meta configs
 localmetaconfig.yaml
-
-# Temp
-dan/
-bash/
-vim/
