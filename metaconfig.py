@@ -58,8 +58,9 @@ def main(argv):
   meta_dir = expandPath(os.path.dirname(os.path.realpath(__file__)))
 
   print("""
-    This script will replace some of the files on this computer according to the
-    module configuration in: """ + meta_dir + """.
+    This script will backup and then create symlinks for some of the files on
+    this computer according to the module (directory) configuration in:
+    """ + meta_dir + """
 
     Make sure you reviewed all the modules in this directory and that they
     contain the correct configuration files that you want to use in this
@@ -207,8 +208,7 @@ def installSymlink(symlink, module, module_meta_path, meta_dir):
     filename = symlink["file"]
 
     # Should we skip this one?
-    if ("enabled" in symlink and symlink["enabled"] is False) or \
-        ("ignore" in symlink and symlink["ignore"] is True):
+    if "enabled" in symlink and symlink["enabled"] is False:
       printWithDelay("Symlink not enabled. Skipping.")
       return
 
@@ -247,6 +247,13 @@ def installSymlink(symlink, module, module_meta_path, meta_dir):
   # in particular we are talking about.
   old_filename = filename
   middle, filename = os.path.split(filename)
+
+  # If the module contains a exclude list, make sure that this file is not in
+  # it. this has to happen after the cleanup to get a clean filename.
+  if "exclude" in module:
+    if filename in module["exclude"] or old_filename in module["exclude"]:
+      printWithDelay(" - Skipping " + filename  + " because it's on the " +
+        "exclude list for this module.")
 
   target = os.path.join(module_meta_path, middle, filename)
   # Target may be explicitly defined. The type check is to avoid hits when the
@@ -316,8 +323,8 @@ def getFullPath(basepath, middle, filename, meta_dir):
   if os.path.normpath(basepath) is "?":
     # If the basepath is "?" we should always prompt
     path = promptPath(filename)
-  elif middle is "":
-    if basepath is "":
+  elif middle == "":
+    if basepath == "":
       # We have no information, just prompt.
       path = promptPath(filename)
     else:
@@ -325,7 +332,8 @@ def getFullPath(basepath, middle, filename, meta_dir):
       path = os.path.join(basepath, filename)
   else:
     if middle[0] in ["~", "/", "."]:
-      # Middle suggests its an absolute or relative part, ignore basepath.
+      # Middle suggests its an absolute or relative part rather than something
+      # to be appended at the end of basepath, so we should ignore basepath.
       path = os.path.join(middle, filename)
     else:
       # We actually have 3 parts.
@@ -339,13 +347,26 @@ def getFullPath(basepath, middle, filename, meta_dir):
     if path is "" or path is None:
       return None
 
-    # Whoa, lots of ifs. At this point we have a path. Let's make sure it exists,
-    # otherwise, prompt. We actually don't need it to exist, we just need the
-    # base dir to exist.
+    # Whoa, lots of ifs. At this point we have a path. Let's make sure it
+    # exists, otherwise, prompt. We actually don't need it to exist,
+    # we just need the base dir to exist.
     parent_dir, _ = os.path.split(path)
     if not os.path.isdir(parent_dir):
-      printWithDelay(" - Inexistent path: " + parent_dir, error = True)
-      path_valid = False
+      printWithDelay(" - Directory doesn't exist: " + parent_dir, error = True)
+      create = promptYesNo(" - Would yu like to create it?")
+      if create:
+        try:
+          os.makedirs(parent_dir, exist_ok=True)
+          printWithDelay(" - Created directory: " + parent_dir)
+          return path
+        except OSError:
+          if not os.path.isdir(parent_dir):
+            printWithDelay(" - Failed to create directory: " + parent_dir,
+              error = True)
+            printWithDelay(" - Do we have the right permissions?", error = True)
+            path_valid = False
+      else:
+        path_valid = False
 
     # Make sure the path provided is not in the metaconfig folder.
     # The only valid case for this is if it's a symlink on the leaf, meaning
