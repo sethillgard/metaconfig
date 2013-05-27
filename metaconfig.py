@@ -134,8 +134,7 @@ def main(argv):
       printWithDelay(" - Using metaconfig.yaml")
 
     # Should we skip this one?
-    if ("enabled" in module and module["enabled"] is False) or \
-        ("ignore" in module and module["ignore"] is True):
+    if ("enabled" in module and module["enabled"] is False):
       printWithDelay(" - Module not enabled. Skipping.")
       continue
 
