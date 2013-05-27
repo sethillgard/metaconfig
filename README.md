@@ -48,7 +48,7 @@ Program flags
 - *-d* Dry run. No changes will be made to the filesystem. Use this to test the effects of this program.
 - *-m* Only install the modules listed after this option.
 - *-e* Exclude the modules listed after this option.
-- *-f* Use the flavors listed after this option. See the [flavors][1] section for more information.
+- *-f* Use the flavors listed after this option. See the [flavors][flavors] section for more information.
 - *--non-interactive* Run in non interactive mode. Will not prompt the user for any additional information. Make sure to test before running with this option.
 
 Examples:
@@ -85,7 +85,7 @@ The full list of possible fields in a metaconfig.yaml file are:
 - enabled: If set to False, this module will not be installed. Defaults to True.
 - infer_symlinks: If set to True, it will install all the files in this directory. If set to False, only the files listed in the "symlinks" list will be installed. Defaults to False if the "symlinks" option is defined, True otherwise.
 - exclude: A list of files to exclude. Useful when infer_symlinks is set to True.
-- flavors: The list of flavors for this module. See the [flavors][1] section for more information.
+- flavors: The list of flavors for this module. See the [flavors][flavors] section for more information.
 - symlinks: A list of symlinks to install. Each item in this list can have 2 forms:
   - A string: The name of  a file in this module to be installed.
   - A symlink object: See below.
@@ -105,7 +105,7 @@ Symlink objects can have the following fields:
 - file: Mandatory. The name or path to the file to be installed. This can override or append to the location set in the module.
 - target: The path to the file the symlink should point to. This file must be in the module directory.
 - enabled: If set to False, this symlink will be ignored. Defaults to True.
-- flavors: The list of flavors for this symlink. See the [flavors][1] section for more information.
+- flavors: The list of flavors for this symlink. See the [flavors][falvors] section for more information.
 
 Example of every option:
 ```yaml
@@ -177,4 +177,4 @@ _.vimrc_ will only be installed if the _linux_ or _mac_ flavors are used when ru
 
 You can use the same technique to select which modules to install based on the flavors used.
 
-[1]:[https://github.com/sethillgard/metaconfig/blob/master/README.md#flavors]
+[flavors]: [https://github.com/sethillgard/metaconfig/master/README.md#flavors]
