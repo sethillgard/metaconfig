@@ -92,7 +92,7 @@ The full list of possible fields in a metaconfig.yaml file are:
 
 Example of every option:
 ```yaml
-    location: "?"
+    location: ~/
     enabled: True
     infer_symlinks: False
     exclude: []
@@ -158,7 +158,7 @@ For example, in your vim module, you can have the following _metaconfig.yaml_:
     location: ~/
     symlinks:
       - file: .vim
-      - file: .vimrc
+      - file: .vimrc
         target: .vimrc_linux
         flavors: [linux]
       - file: .vimrc
