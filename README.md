@@ -177,4 +177,4 @@ _.vimrc_ will only be installed if the _linux_ or _mac_ flavors are used when ru
 
 You can use the same technique to select which modules to install based on the flavors used.
 
-[flavors]: [https://github.com/sethillgard/metaconfig/master/README.md#flavors]
+[flavors]: (https://github.com/sethillgard/metaconfig/master/README.md#flavors)
