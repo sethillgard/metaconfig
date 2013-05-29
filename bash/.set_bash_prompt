@@ -1,0 +1,123 @@
+#!/bin/bash
+# Custom bash prompt from: http://www.linuxdoc.org/HOWTO/Bash-Prompt-HOWTO/x848.html
+#   termwide prompt with tty number
+#      by Giles - created 2 November 98, last tweaked 31 July 2001
+#
+#     This is a variant on "termwide" that incorporates the tty number.
+#
+
+hostnam=$(hostname -s)
+usernam=$(whoami)
+##temp="$(tty)"
+#   Chop off the first five chars of tty (ie /dev/):
+##cur_tty="${temp:5}"
+unset temp
+
+function prompt_command {
+  #   Find the width of the prompt:
+  TERMWIDTH=${COLUMNS}
+
+  # Replace home dir with ~. The # prior to ${HOME} restricts the match
+  # to the start of the string only.
+  TILDEPWD="${PWD/#${HOME}/~}"
+  TILDEPWD="${TILDEPWD/#${NFS_HOME}/}"
+
+  # Git branch name
+  gitBRANCH=$(__git_ps1 "[%s]")
+  # Fixup for |BISECTING noise that started with git 1.6.5
+  gitBRANCH="${gitBRANCH/|BISECTING/}"
+
+
+  #   Add all the accessories below ...
+  local temp="--(${TILDEPWD})---\D{%a %H:%M:%S}--${gitBRANCH}--(${usernam}@${hostnam})--"
+
+  let fillsize=${TERMWIDTH}-${#temp}
+  if [ "$fillsize" -gt "0" ]; then
+	  fill="                                                                                                                                                                                                                                                                                      "
+  	#   It's theoretically possible someone could need more 
+	  #   dashes than above, but very unlikely!  HOWTO users, 
+  	#   the above should be ONE LINE, it may not cut and
+	  #   paste properly
+    fill="${fill:0:${fillsize}}"
+    newPWD="${TILDEPWD}"
+  fi
+
+  if [ "$fillsize" -lt "0" ]; then
+	  fill=""
+  	let cut=3-${fillsize}
+	  newPWD="...${TILDEPWD:${cut}}"
+  fi
+
+  if [ "$(id -u)" -ne 0 ]; then
+    echo "[$(__git_ps1 "%s")]" `date` `pwd` `history 1` >> ~/.shell.log;
+  fi
+
+  twtty
+}
+
+PROMPT_COMMAND=prompt_command
+
+function twtty {
+  local NO_COLOR="\e[m"
+
+  local BG_BLACK=";40m"
+  local BG_RED=";41m"
+  local BG_GREEN=";42m"
+  local BG_YELLOW=";43m"
+  local BG_BLUE=";44m"
+  local BG_MAGENTA=";45m"
+  local BG_CYAN=";46m"
+  local BG_WHITE=";47m"
+
+  local FG_BLACK="0;30"
+  local FG_RED="1;31"
+  local FG_GREEN="1;32"
+  local FG_YELLOW="1;33"
+  local FG_BLUE="1;34"
+  local FG_MAGENTA="1;35"
+  local FG_CYAN="1;36"
+  local FG_WHITE="1;37"
+
+  # The colors for the standard prompt (black on white).
+  local BG_COLOR=${BG_BLACK}
+  local COLOR1="\e[${FG_BLUE}${BG_COLOR}"
+  local COLOR2="\e[${FG_BLUE}${BG_COLOR}"
+  local COLOR3="\e[${FG_BLUE}${BG_COLOR}"
+  
+  if [ ! -z $gitBRANCH ]; then
+    if [[ "${gitBRANCH}" =~ .*"MERGING".* ]]; then
+      # Colors for a git prompt in merging mode (red background).
+      BG_COLOR=${BG_BLACK}
+      COLOR1="\e[${FG_BLUE}${BG_COLOR}"
+      COLOR2="\e[${FG_BLUE}${BG_COLOR}"
+      COLOR3="\e[${FG_BLUE}${BG_COLOR}"
+    else
+      # Colors for a git prompt in normal mode (green background).
+      BG_COLOR=${BG_BLACK}
+      COLOR1="\e[${FG_BLUE}${BG_COLOR}"
+      COLOR2="\e[${FG_BLUE}${BG_COLOR}"
+      COLOR3="\e[${FG_BLUE}${BG_COLOR}"
+    fi
+  fi
+  
+  case $TERM in
+    xterm*|rxvt*)
+        if [ -z $gitBRANCH ]; then
+          TITLEBAR='\[\e]0;\u@\h: (\w)\007\]'
+        else
+          TITLEBAR='\[\e]0;\u@\h: (\w) - ${gitBRANCH}\007\]'
+        fi
+        ;;
+    *)
+        TITLEBAR=""
+        ;;
+  esac
+
+PS1="$TITLEBAR\
+${COLOR2}  (\${newPWD})\
+${COLOR1}   \D{%a %H:%M:%S}   ${COLOR3}\${gitBRANCH}${COLOR1}   \${fill}\
+ (\$usernam@\$hostnam)  ${NO_COLOR}\n\$ "
+
+  export PS1
+}
+
