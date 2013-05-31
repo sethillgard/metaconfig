@@ -110,7 +110,7 @@ def main(argv):
     # Ignore modules not listed as parameters, ignored ones, and hidden ones.
     if len(args.modules) > 0 and module_name not in args.modules: continue
     if module_name in args.exclude_modules: continue
-    if module_name[0] is ".": continue
+    if module_name.startswith("."): continue
 
     if "localmetaconfig.yaml" in file_names:
       stream = open(module_meta_path + "/localmetaconfig.yaml", 'r')
@@ -568,3 +568,4 @@ def printWithDelay(text, error = False, delay = 0.003):
 
 if __name__ == "__main__":
     main(sys.argv[1:])
+
