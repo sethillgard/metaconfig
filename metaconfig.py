@@ -95,6 +95,12 @@ def main(argv):
 
   ignored_files = ["metaconfig.yaml", "localmetaconfig.yaml"]
 
+  if args.dry_run:
+    printWithDelay("DRY RUN. No changes will be made to the filesystem.", error=True)
+  else:
+    printWithDelay("Please review filenames carefully.", error=True)
+
+
   for (module_meta_path, dir_name, file_names) in os.walk(meta_dir):
     module_meta_path = expandPath(module_meta_path)
 
@@ -164,7 +170,11 @@ def main(argv):
 
     # Print a list of links to be installed and ask the user if the module
     # should be installed.
-    printWithDelay("This module includes the following files: ")
+    if "location" in module and module["location"] != "?":
+      printWithDelay("This module will install the following files at: " +
+          module["location"])
+    else:
+      printWithDelay("This module will install the following files: ")
     for link in module["symlinks"]:
       if isinstance(link, str):
         printWithDelay(" - " + link)
