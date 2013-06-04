@@ -6,11 +6,9 @@ function fish_prompt
      set -g __fish_prompt_hostname (hostname|cut -d . -f 1)
    end
 
-  printf '╭─ %s%s@%s %s%s%s' (set_color blue) (whoami) $__fish_prompt_hostname (set_color purple --bold) (prompt_pwd)
-
-  if test -d .git
-    printf ' %sgit:%s' (set_color red --bold) (git branch 2> /dev/null | grep -e '\* ' | sed 's/^..\(.*\)/\1/')
-  end
+  printf '╭─ %s%s@%s %s' (set_color blue) (whoami) $__fish_prompt_hostname
+  printf '%s%s' (set_color purple --bold) (prompt_pwd)
+  printf '%s%s' (set_color red --bold) (__fish_git_prompt)
 
   printf '\n%s' (set_color normal)
   printf '╰%s➤ ' (set_color red --bold)
