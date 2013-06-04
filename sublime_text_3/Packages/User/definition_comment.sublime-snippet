@@ -1,0 +1,11 @@
+<snippet>
+  <content><![CDATA[
+/**
+ * ${1:Comment for this function or class.}
+${2: *
+ * ${3:Expanded comment.}}
+ */
+]]></content>
+  <tabTrigger>/**</tabTrigger>
+  <description>A snippet to generate /** style comments.</description>
+</snippet>
