@@ -127,7 +127,7 @@ def main(argv):
         continue
       # For top level modules without metaconfig.yaml file, infer files and
       # prompt for the location.
-      module = {"location": "?", "infer_symlinks": True}
+      module = {"location": "", "prompt_location": True, "infer_symlinks": True}
 
     # Load it's yaml file.
     if module is None:
@@ -156,7 +156,10 @@ def main(argv):
     if not "symlinks" in module or "infer_symlinks" in module and \
         module["infer_symlinks"]:
       if not "location" in module:
-        module["location"] = "?"
+        module["location"] = ""
+        module["prompt_location"] = True
+      if not "prompt_location" in module:
+        module["prompt_location"] = False
       if not "symlinks" in module:
         module["symlinks"] = []
       infered_links = os.listdir(module_meta_path)
@@ -170,7 +173,7 @@ def main(argv):
 
     # Print a list of links to be installed and ask the user if the module
     # should be installed.
-    if "location" in module and module["location"] != "?":
+    if module["location"].strip():
       printWithDelay("This module will install the following files at: " +
           module["location"])
     else:
@@ -186,12 +189,12 @@ def main(argv):
     if not promptYesNo("Install this module?"):
       continue
 
-    # If the location for the module is "?", we should ask each time.
-    if "location" in module and module["location"] == "?":
-      printWithDelay("Please provide the base path for this module.")
-      location = promptPath(None)
-      if location is not None and location != "":
-        module["location"] = location
+    # Should we prompt for the location?
+    if "prompt_location" in module and module["prompt_location"]:
+        printWithDelay("Please provide the base path for this module.")
+        location = promptPath(None, module["location"])
+        if location is not None and location.strip():
+          module["location"] = location
 
     # Install symlinks
     if "symlinks" in module:
@@ -203,7 +206,7 @@ def main(argv):
 
 def installSymlink(symlink, module, module_meta_path, meta_dir):
   global args
-  basepath = "?"
+  basepath = ""
   if "location" in module:
     basepath = module["location"]
 
@@ -235,7 +238,7 @@ def installSymlink(symlink, module, module_meta_path, meta_dir):
     printWithDelay(bc.END, end='')
     return "error"
 
-  # Cleanup
+  # Add a slash at the end.
   if basepath[-1:] != os.sep:
     basepath += os.sep
 
@@ -329,13 +332,13 @@ def installSymlink(symlink, module, module_meta_path, meta_dir):
 
 def getFullPath(basepath, middle, filename, meta_dir):
   global args
-  if os.path.normpath(basepath) is "?":
-    # If the basepath is "?" we should always prompt
-    path = promptPath(filename)
-  elif middle == "":
-    if basepath == "":
+  if not os.path.normpath(basepath).strip():
+    # If the basepath is empty we should always prompt.
+    path = promptPath(filename, "")
+  elif not middle.strip():
+    if not basepath.strip():
       # We have no information, just prompt.
-      path = promptPath(filename)
+      path = promptPath(filename, "")
     else:
       # We have a basepath and no middle.
       path = os.path.join(basepath, filename)
@@ -362,10 +365,11 @@ def getFullPath(basepath, middle, filename, meta_dir):
     parent_dir, _ = os.path.split(path)
     if not os.path.isdir(parent_dir):
       printWithDelay(" - Directory doesn't exist: " + parent_dir, error = True)
-      create = promptYesNo(" - Would yu like to create it?")
+      create = promptYesNo(" - Would you like to create it?")
       if create:
         try:
-          os.makedirs(parent_dir, exist_ok=True)
+          if not args.dry_run:
+            os.makedirs(parent_dir, exist_ok=True)
           printWithDelay(" - Created directory: " + parent_dir)
           return path
         except OSError:
@@ -392,11 +396,11 @@ def getFullPath(basepath, middle, filename, meta_dir):
         path_valid = False
 
     if not path_valid:
-      path = promptPath(filename)
+      path = promptPath(filename, "")
 
   return path
 
-def promptPath(filename):
+def promptPath(filename, defaultPath):
   global args
   if args.non_interactive:
     printWithDelay("No path provided. Cannot prompt in non-interactive mode.",
@@ -406,6 +410,7 @@ def promptPath(filename):
   readline.set_completer_delims(' \t\n;')
   readline.parse_and_bind("tab: complete")
   readline.set_completer(promptPathCompleter)
+  readline.set_startup_hook(lambda: readline.insert_text(defaultPath))
 
   path = None
   while True:
@@ -414,14 +419,12 @@ def promptPath(filename):
         "in this module.")
       printWithDelay(" - You can press tab to autocomplete. " +
         "Leave empty to enter the location of each link individually.")
+      path = input(" >>> ")
     else:
       printWithDelay(" - Provide a path for the local " + filename +
         " in this computer.")
       printWithDelay(" - You can press tab to autocomplete. " +
         "Leave empty to skip this file.")
-    if filename is None:
-      path = input(" >>> ")
-    else:
       path = input(" - " + filename + " >>> ")
 
     # If we get an empty string back, just return, indicating to skip this file.
@@ -434,7 +437,7 @@ def promptPath(filename):
     if filename is not None:
       join = os.path.join(path, filename)
       if os.path.isdir(path) and os.path.lexists(join):
-        if promptYesNo("Replace " + join + " ?"):
+        if promptYesNo("Install at " + join + " ?"):
           return join
 
     # We get something that exists
@@ -442,7 +445,7 @@ def promptPath(filename):
       if filename is None:
         # This means we are trying to get the location for the whole module
         return path
-      if promptYesNo("Replace " + path + " ?"):
+      if promptYesNo("Install at " + path + " ?"):
         return path
       else:
         continue
@@ -451,7 +454,7 @@ def promptPath(filename):
     # the path to a new file, which is fine.
     base, _ = os.path.split(path)
     if os.path.lexists(base) and os.path.isdir(base):
-      if promptYesNo("Replace " + path + " ?"):
+      if promptYesNo("Install at " + path + " ?"):
         return path
       else:
         continue
@@ -476,6 +479,10 @@ def promptYesNo(question, default="yes"):
   if args.non_interactive:
     return True
 
+  # Reset to default values.
+  readline.set_completer(None)
+  readline.set_startup_hook(None)
+
   readline.set_completer(None)
   valid = {"yes":True, "y":True, "ye":True, "no":False, "n":False}
   if default == None:
@@ -488,14 +495,14 @@ def promptYesNo(question, default="yes"):
     raise ValueError("Invalid default answer: '%s'" % default)
 
   while True:
-    sys.stdout.write(question + prompt)
+    printWithDelay(question + prompt, end="")
     choice = input().lower()
-    if default is not None and choice == '':
+    if default is not None and not choice.strip():
       return valid[default]
     elif choice in valid:
       return valid[choice]
     else:
-      sys.stdout.write("Please respond with 'yes' or 'no' (or 'y' or 'n').\n")
+      printWithDelay("Please respond with 'yes' or 'no' (or 'y' or 'n').")
 
 
 def compareDirs(dir1, dir2):
@@ -563,7 +570,7 @@ def promptPathCompleter(text, state):
   text = expandPath(text)
   return (glob.glob(text + '*')+[None])[state]
 
-def printWithDelay(text, error = False, delay = 0.003):
+def printWithDelay(text, end = "\n", error = False, delay = 0.003):
   global args
   if error:
     print(bc.ERROR, end='')
@@ -574,7 +581,7 @@ def printWithDelay(text, error = False, delay = 0.003):
       sys.stdout.write(l)
       sys.stdout.flush()
       time.sleep(delay)
-  print(bc.END)
+  print(bc.END, end=end)
 
 if __name__ == "__main__":
     main(sys.argv[1:])

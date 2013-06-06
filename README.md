@@ -81,7 +81,8 @@ Generally, you don't need to configure it much further.
 
 The full list of possible fields in a metaconfig.yaml file are:
 
-- location: The path to where this module should be installed. Individual symlinks can override this path, or append to it. You can set this to "?", including quotation marks to ask the user each time.
+- location: The path to where this module should be installed. Individual symlinks can override this path, or append to it.
+- prompt_location: If set to True, the user will be prompted to confirm the location provided. Defaults to False, but it's set to True automatically if location is not set or if it's empty.
 - enabled: If set to False, this module will not be installed. Defaults to True.
 - infer_symlinks: If set to True, it will install all the files in this directory. If set to False, only the files listed in the "symlinks" list will be installed. Defaults to False if the "symlinks" option is defined, True otherwise.
 - exclude: A list of files to exclude. Useful when infer_symlinks is set to True.
@@ -93,6 +94,7 @@ The full list of possible fields in a metaconfig.yaml file are:
 Example of every option:
 ```yaml
     location: ~/
+    prompt_location: False
     enabled: True
     infer_symlinks: False
     exclude: []
