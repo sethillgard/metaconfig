@@ -1,4 +1,5 @@
 location: "~/.config/sublime-text-3"
+prompt_location: True
 symlinks:
   - file: "Installed Packages"
   - file: "Packages/User"
