@@ -41,7 +41,7 @@ import shutil
 # Arguments to the program
 args = None
 
-class bc:
+class TextColors:
     HEADER = '\033[95m'
     OKBLUE = '\033[94m'
     OKGREEN = '\033[92m'
@@ -152,14 +152,16 @@ def main(argv):
           "we are not running with the correct flavors.")
         continue
 
+    # Prompt location or infer it?
+    if not "prompt_location" in module:
+      module["prompt_location"] = False
+    if not "location" in module:
+      module["location"] = ""
+      module["prompt_location"] = True  # Cannot infer location
+
     # Infer links from the files in the module
     if not "symlinks" in module or "infer_symlinks" in module and \
         module["infer_symlinks"]:
-      if not "location" in module:
-        module["location"] = ""
-        module["prompt_location"] = True
-      if not "prompt_location" in module:
-        module["prompt_location"] = False
       if not "symlinks" in module:
         module["symlinks"] = []
       infered_links = os.listdir(module_meta_path)
@@ -173,7 +175,7 @@ def main(argv):
 
     # Print a list of links to be installed and ask the user if the module
     # should be installed.
-    if module["location"].strip():
+    if "location" in module and module["location"].strip():
       printWithDelay("This module will install the following files at: " +
           module["location"])
     else:
@@ -233,9 +235,9 @@ def installSymlink(symlink, module, module_meta_path, meta_dir):
         return "ok"
 
   if filename is "":
-    printWithDelay(bc.ERROR, end='')
+    printWithDelay(TextColors.ERROR, end='')
     printWithDelay("Error: Found empty filename for symlink.")
-    printWithDelay(bc.END, end='')
+    printWithDelay(TextColors.END, end='')
     return "error"
 
   # Add a slash at the end.
@@ -537,8 +539,7 @@ def expandPath(path):
   return os.path.expandvars(os.path.expanduser(path))
 
 def getBackupPaths(path):
-  """
-  Determines the current and next backup names for the specified path.
+  """Determines the current and next backup names for the specified path.
 
   @param path: The path to the file or folder to be checked.
 
@@ -573,7 +574,7 @@ def promptPathCompleter(text, state):
 def printWithDelay(text, end = "\n", error = False, delay = 0.003):
   global args
   if error:
-    print(bc.ERROR, end='')
+    print(TextColors.ERROR, end='')
   if args.non_interactive:
     print(text, end='')
   else:
@@ -581,8 +582,7 @@ def printWithDelay(text, end = "\n", error = False, delay = 0.003):
       sys.stdout.write(l)
       sys.stdout.flush()
       time.sleep(delay)
-  print(bc.END, end=end)
+  print(TextColors.END, end=end)
 
 if __name__ == "__main__":
     main(sys.argv[1:])
-
