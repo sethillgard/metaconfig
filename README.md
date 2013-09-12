@@ -160,7 +160,7 @@ For example, in your vim module, you can have the following _metaconfig.yaml_:
     location: ~/
     symlinks:
       - file: .vim
-      - file: .vimrc
+      - file: .vimrc
         target: .vimrc_linux
         flavors: [linux]
       - file: .vimrc

@@ -229,7 +229,7 @@ def installSymlink(symlink, module, module_meta_path, meta_dir):
     # Check the flavors.
     if "flavors" in symlink:
       # If this lists don't intersect, just skip the symlink.
-      if not set(args.flavors) & set(module["flavors"]):
+      if not set(args.flavors) & set(symlink["flavors"]):
         printWithDelay(" - Symlink has flavor requirements. Skipping because " +
           "we are not running with the correct flavors.")
         return "ok"
