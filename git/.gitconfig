@@ -45,3 +45,5 @@
 
 [push]
 	default = simple
+[google]
+	ldapgroup = enders

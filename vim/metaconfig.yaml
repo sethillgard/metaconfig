@@ -1,1 +1,7 @@
 location: ~/
+symlinks:
+  - file: .vimrc
+  - file: .vimrc-personal
+  - file: .vimrc
+    target: .vimrc-google
+    flavors: [google]

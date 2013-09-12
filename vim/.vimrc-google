@@ -1,0 +1,2 @@
+source /usr/share/vim/google/google.vim
+source ~/.vimrc-personal
